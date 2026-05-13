@@ -107,7 +107,7 @@ td{padding:6px 10px;border-bottom:1px solid #ffeaa7;font-size:14px}
 <p>This will:</p>
 <ul>
 <li>Delete the <code>/install</code> folder</li>
-<li>Disable SSL enforcement in the database</li>
+<li>Configure SSL and shop_url for HTTPS</li>
 </ul>
 <p style="margin-top:12px;font-size:13px;color:#666">DB: ' . htmlspecialchars($dbServer) . ' / ' . htmlspecialchars($dbName) . ' (prefix: ' . htmlspecialchars($prefix) . ')</p>
 <div class="row"><strong>Ready? <a href="?confirm=yes" class="btn">Run Cleanup →</a></strong></div>
@@ -127,16 +127,16 @@ if (is_dir($installDir)) {
     $results[] = ['⚪', '/install folder already gone'];
 }
 
-// 2. Disable SSL in database
+// 2. Fix SSL and shop_url for proper HTTPS redirect
+$domain = $_SERVER['HTTP_HOST'];
 $dsn = "mysql:host=$dbServer;dbname=$dbName;charset=utf8mb4";
 try {
     $pdo = new PDO($dsn, $dbUser, $dbPass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $stmt = $pdo->prepare(
-        "UPDATE {$prefix}configuration SET value='0' WHERE name IN ('PS_SSL_ENABLED', 'PS_SSL_ENABLED_EVERYWHERE')"
-    );
-    $stmt->execute();
-    $results[] = ['✔', 'SSL enforcement disabled in database'];
+    
+    $pdo->exec("UPDATE {$prefix}configuration SET value='1' WHERE name='PS_SSL_ENABLED'");
+    $pdo->exec("UPDATE {$prefix}shop_url SET domain_ssl='$domain' WHERE main=1");
+    $results[] = ['✔', 'SSL and shop_url configured for HTTPS'];
 } catch (PDOException $e) {
     $results[] = ['✘', 'DB error: ' . $e->getMessage()];
 }
