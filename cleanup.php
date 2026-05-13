@@ -43,14 +43,40 @@ $dbPass   = getenv('DB_PASSWD') ?: '';
 $dbName   = getenv('DB_NAME')   ?: 'prestashop';
 $prefix   = 'ps_'; // default; overridden below if we can read it
 
-// Try to read table prefix from any known config file
-foreach (['/var/www/html/config/settings.inc.php', '/var/www/html/config/defines.inc.php'] as $f) {
-    if (file_exists($f)) {
-        $content = file_get_contents($f);
-        if (preg_match("/_DB_PREFIX_[^']*'([^']+)'/", $content, $m)) {
-            $prefix = $m[1];
-            break;
-        }
+// Try to read table prefix from known config files
+foreach ([
+    '/var/www/html/app/config/parameters.php',
+    '/var/www/html/app/config/parameters.yml',
+    '/var/www/html/config/config.inc.php',
+    '/var/www/html/config/defines.inc.php',
+    '/var/www/html/config/settings.inc.php',
+    '/var/www/html/config/bootstrap.php',
+] as $f) {
+    if (!file_exists($f)) continue;
+    $content = file_get_contents($f);
+
+    // YAML: database_prefix: phzag_
+    if (preg_match("/database_prefix:\s*['\"]?([^'\"\n]+)/", $content, $m)) {
+        $prefix = trim($m[1]);
+        break;
+    }
+
+    // PHP array: 'database_prefix' => 'phzag_'
+    if (preg_match("/'database_prefix'\s*=>\s*'([^']+)'/", $content, $m)) {
+        $prefix = $m[1];
+        break;
+    }
+
+    // define('_DB_PREFIX_', 'phzag_')
+    if (preg_match("/define\s*\(\s*['\"]_DB_PREFIX_['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)/", $content, $m)) {
+        $prefix = $m[1];
+        break;
+    }
+
+    // _DB_PREFIX_ => 'ps_' (config.inc.php array format)
+    if (preg_match("/_DB_PREFIX_[^'\"]*['\"]([^'\"]+)['\"]/", $content, $m)) {
+        $prefix = $m[1];
+        break;
     }
 }
 

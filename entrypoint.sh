@@ -18,22 +18,30 @@ fi
 chown -R www-data:www-data /var/www/html
 
 # 2. If already installed: remove /install and disable SSL on every boot
-if [ -f "/var/www/html/config/settings.inc.php" ]; then
+#    Detect installation via parameters.php (which overlay2 doesn't block)
+#    or fallback to settings.inc.php
+if [ -f "/var/www/html/app/config/parameters.php" ] || [ -f "/var/www/html/config/settings.inc.php" ]; then
     if [ -d "/var/www/html/install" ]; then
         echo "[entrypoint] Removing /install folder..."
         rm -rf /var/www/html/install
     fi
 
-    # Disable SSL enforcement (Cloudflare handles TLS upstream)
-    PREFIX=$(grep -oP "_DB_PREFIX_\K[^';]+" /var/www/html/config/settings.inc.php 2>/dev/null || echo "ps_")
+    # Get table prefix — parameters.php takes priority (settings.inc.php may be blocked by overlay2)
+    PREFIX="ps_"
+    if [ -f "/var/www/html/app/config/parameters.php" ]; then
+        PREFIX=$(grep -oP "'database_prefix'\s*=>\s*'\K[^']+" /var/www/html/app/config/parameters.php 2>/dev/null || echo "ps_")
+    elif [ -f "/var/www/html/config/settings.inc.php" ]; then
+        PREFIX=$(grep -oP "_DB_PREFIX_\K[^';]+" /var/www/html/config/settings.inc.php 2>/dev/null || echo "ps_")
+    fi
+
     DB_SERVER="${DB_SERVER:-localhost}"
     DB_USER="${DB_USER:-root}"
     DB_PASSWD="${DB_PASSWD:-}"
     DB_NAME="${DB_NAME:-prestashop}"
 
-    echo "[entrypoint] Disabling SSL enforcement..."
+    echo "[entrypoint] Disabling SSL enforcement (prefix=$PREFIX)..."
     mysql -h "$DB_SERVER" -u "$DB_USER" -p"$DB_PASSWD" "$DB_NAME" <<SQL 2>/dev/null || true
-UPDATE ${PREFIX}configuration SET value='0' WHERE name IN ('PS_SSL_ENABLED', 'PS_SSL_ENABLED_EVERYWHERE');
+UPDATE \`${PREFIX}configuration\` SET value='0' WHERE name IN ('PS_SSL_ENABLED', 'PS_SSL_ENABLED_EVERYWHERE');
 SQL
 fi
 
