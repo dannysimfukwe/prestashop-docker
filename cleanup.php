@@ -1,106 +1,113 @@
 <?php
 /**
  * PrestaShop Post-Install Cleanup
- * Removes the /install folder and disables SSL enforcement.
  * Usage: Visit https://your-site.com/cleanup.php in your browser.
+ *
+ * Detects install completion by checking for config.inc.php WITH database
+ * credentials (PrestaShop writes real creds during install).
+ * Uses shell commands for overlay2-friendly file removal.
  */
 
-// ── Detect install status ──
-$installDir  = '/var/www/html/install';
 $settingsFile = '/var/www/html/config/settings.inc.php';
+$configFile   = '/var/www/html/config/config.inc.php';
+$installDir   = '/var/www/html/install';
 
-$installPresent  = is_dir($installDir);
-$hasSettings     = file_exists($settingsFile);
-$hasConfig       = file_exists('/var/www/html/config/config.inc.php');
-
-// Check if admin was renamed (clear sign install completed)
-$adminRenamed = false;
+// Detect if install is complete:
+// PrestaShop creates config.inc.php with REAL db creds during install.
+// A fresh image has placeholder values. We check for real creds.
+$installDone = false;
+if (file_exists($configFile)) {
+    $content = file_get_contents($configFile);
+    // Check if DB credentials were actually set by the installer
+    if (preg_match("/_DB_SERVER_/'[^']+/'/", $content)
+        && preg_match("/_DB_NAME_/'[^']+/'/", $content)
+        && !preg_match("/_DB_NAME_/'prestashop'/", $content)) {
+        $installDone = true;
+    }
+}
+if (file_exists($settingsFile)) {
+    $installDone = true;
+}
+// Also check if admin folder was renamed (another sign of completed install)
 $dh = @opendir('/var/www/html');
 if ($dh) {
     while (($f = readdir($dh)) !== false) {
-        if (preg_match('/^admin_\w+$/', $f) && is_dir('/var/www/html/' . $f)) {
-            $adminRenamed = true;
+        if (preg_match('/^admin_[a-f0-9]+$/', $f) && is_dir('/var/www/html/' . $f)) {
+            $installDone = true;
             break;
         }
     }
     closedir($dh);
 }
 
-// Truly not installed: install folder present AND no settings AND no renamed admin
-$notInstalled = $installPresent && !$hasSettings && !$adminRenamed;
-
-if ($notInstalled) {
+if (!$installDone) {
     die('Installation not complete yet. Please finish the install wizard first, then revisit this page.');
 }
 
-// ── DB credentials from environment (always available in Docker) ──
+// ── DB credentials: prefer settings.inc.php, fall back to config.inc.php, then env ──
+$prefix   = 'ps_';
 $dbServer = getenv('DB_SERVER') ?: 'localhost';
 $dbUser   = getenv('DB_USER')   ?: 'root';
 $dbPass   = getenv('DB_PASSWD') ?: '';
 $dbName   = getenv('DB_NAME')   ?: 'prestashop';
 
-// Try to get table prefix from settings.inc.php or fallback to ps_
-$prefix = 'ps_';
-if ($hasSettings) {
+$source = 'environment';
+
+if (file_exists($settingsFile)) {
+    $source = 'settings.inc.php';
     $content = file_get_contents($settingsFile);
-    if (preg_match("/_DB_PREFIX_.*'([^']+)'/", $content, $m)) {
-        $prefix = $m[1];
-    }
+    preg_match("/_DB_SERVER_.*'([^']+)'/", $content, $m); $dbServer = $m[1] ?: $dbServer;
+    preg_match("/_DB_USER_.*'([^']+)'/",   $content, $m); $dbUser   = $m[1] ?: $dbUser;
+    preg_match("/_DB_PASSWD_.*'([^']+)'/", $content, $m); $dbPass   = $m[1] ?: $dbPass;
+    preg_match("/_DB_NAME_.*'([^']+)'/",   $content, $m); $dbName   = $m[1] ?: $dbName;
+    preg_match("/_DB_PREFIX_.*'([^']+)'/", $content, $m); $prefix   = $m[1] ?: $prefix;
+} elseif (file_exists($configFile)) {
+    $source = 'config.inc.php';
+    $content = file_get_contents($configFile);
+    preg_match("/_DB_SERVER_.*'([^']+)'/", $content, $m); $dbServer = $m[1] ?: $dbServer;
+    preg_match("/_DB_USER_.*'([^']+)'/",   $content, $m); $dbUser   = $m[1] ?: $dbUser;
+    preg_match("/_DB_PASSWD_.*'([^']+)'/", $content, $m); $dbPass   = $m[1] ?: $dbPass;
+    preg_match("/_DB_NAME_.*'([^']+)'/",   $content, $m); $dbName   = $m[1] ?: $dbName;
+    preg_match("/_DB_PREFIX_.*'([^']+)'/", $content, $m); $prefix   = $m[1] ?: $prefix;
 }
 
-// ── Confirmation page ──
+// ── Show confirmation page ──
 $CONFIRM = isset($_GET['confirm']) && $_GET['confirm'] === 'yes';
 
 if (!$CONFIRM) {
-    $installStat = $installPresent
-        ? '<span style="color:#856404;font-weight:bold">⚠ Still present — will be removed</span>'
-        : '<span style="color:green;font-weight:bold">✔ Already removed</span>';
-    $settingsStat = $hasSettings
-        ? '<span style="color:green;font-weight:bold">✔ Found</span>'
-        : '<span style="color:#856404;font-weight:bold">⚠ Not found (install may have failed)</span>';
-    $adminStat = $adminRenamed
-        ? '<span style="color:green;font-weight:bold">✔ Renamed</span>'
-        : '<span style="color:#856404;font-weight:bold">⚠ Not renamed</span>';
-
     echo '<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>PrestaShop Cleanup</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:640px;margin:60px auto;padding:24px;background:#fff3cd;border:2px solid #ffc107;border-radius:12px;color:#333}
-h1{color:#856404;margin-top:0}
-a{color:#004085;text-decoration:underline}
-.warning{padding:16px;background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;color:#155724;margin-top:16px}
-table{width:100%;border-collapse:collapse;margin:12px 0}
-td{padding:6px 10px;border-bottom:1px solid #ffeaa7;font-size:14px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:600px;margin:60px auto;padding:24px;background:#fff3cd;border:2px solid #ffc107;border-radius:12px;color:#333}
+h1{color:#856404} a{color:#004085;text-decoration:underline}
+.ok{color:green;font-weight:bold} .warn{color:#856404;font-weight:bold}
+div{margin-top:12px;line-height:1.8} .box{margin-top:16px}
+.btn{display:inline-block;font-size:18px;padding:12px 24px;background:#004085;color:#fff;border-radius:6px;text-decoration:none;margin-top:8px}
 </style></head><body>
 <h1>⚡ PrestaShop Post-Install Cleanup</h1>
-<table>
-<tr><td><strong>Install folder</strong></td><td>' . $installStat . '</td></tr>
-<tr><td><strong>settings.inc.php</strong></td><td>' . $settingsStat . '</td></tr>
-<tr><td><strong>Admin folder renamed</strong></td><td>' . $adminStat . '</td></tr>
-</table>
+<p>Install detected via: <strong>' . $source . '</strong></p>
+<div class="box">
+<strong>Database:</strong> ' . htmlspecialchars($dbServer) . ' / ' . htmlspecialchars($dbName) . '<br>
+<strong>User:</strong> ' . htmlspecialchars($dbUser) . '
+</div>
 <p>This will:</p>
 <ul>
 <li>Delete the <code>/install</code> folder</li>
 <li>Disable SSL enforcement in the database</li>
 </ul>
-<p style="margin-top:12px;font-size:13px;color:#666">DB: ' . htmlspecialchars($dbServer) . ' / ' . htmlspecialchars($dbName) . '</p>
-<div class="warning">
-<strong>Ready?</strong> Click here to proceed:<br>
-<a href="?confirm=yes" style="font-size:18px;padding:12px 24px;background:#004085;color:#fff;border-radius:6px;text-decoration:none;display:inline-block;margin-top:8px">Run Cleanup →</a>
-</div>
+<div class="warn box"><strong>Ready? <a href="?confirm=yes" class="btn">Run Cleanup →</a></strong></div>
 </body></html>';
     exit;
 }
 
 // ── Run cleanup ──
+$results = [];
 
-// 1. Remove /install folder (shell if PHP can't handle overlay2)
-$installDir = '/var/www/html/install';
+// 1. Remove /install folder (shell for overlay2 compatibility)
 if (is_dir($installDir)) {
-    // Use shell mv+rm to handle overlay2 cross-device issues
-    $rmOk = shell_exec("rm -rf /var/www/html/install 2>&1");
-    $installDone = !is_dir($installDir);
-    $results[] = [$installDone ? '✔' : '✘', '/install folder ' . ($installDone ? 'removed' : 'FAILED to remove: ' . $rmOk)];
+    $out = shell_exec("rm -rf " . escapeshellarg($installDir) . " 2>&1");
+    $results[] = [!is_dir($installDir) ? '✔' : '✘',
+                  '/install folder ' . (!is_dir($installDir) ? 'removed' : 'FAILED: ' . $out)];
 } else {
     $results[] = ['⚪', '/install folder already gone'];
 }
@@ -112,19 +119,19 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $stmt = $pdo->prepare("UPDATE {$prefix}configuration SET value='0' WHERE name IN ('PS_SSL_ENABLED', 'PS_SSL_ENABLED_EVERYWHERE')");
     $stmt->execute();
-    $results[] = ['✔', "SSL disabled in database"];
+    $results[] = ['✔', 'SSL enforcement disabled in database'];
 } catch (PDOException $e) {
     $results[] = ['✘', 'DB error: ' . $e->getMessage()];
 }
 
-// 3. Show result
+// 3. Output result
 $siteUrl = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . '/';
 ?>
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Cleanup Complete</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:600px;margin:60px auto;padding:24px;background:#d4edda;border:2px solid #28a745;border-radius:12px;color:#155724}
-h1{color:#155724} .item{font-size:16px} .ok{color:green} .fail{color:red} a{color:#004085}
+h1{color:#155724}.item{font-size:16px}.ok{color:green}.fail{color:red}a{color:#004085}
 </style></head><body>
 <h1>✅ Cleanup Complete</h1>
 <p>Results:</p>
