@@ -1,6 +1,8 @@
 FROM prestashop/prestashop:latest
 
-RUN chown -R www-data:www-data /var/www/html
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 80
-USER root
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["apache2-foreground"]
