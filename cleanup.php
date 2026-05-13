@@ -17,7 +17,7 @@ $adminRenamed = false;
 $dh = @opendir('/var/www/html');
 if ($dh) {
     while (($f = readdir($dh)) !== false) {
-        if (preg_match('/^admin_[a-f0-9]+$/', $f) && is_dir('/var/www/html/' . $f)) {
+        if (preg_match('/^admin[a-f0-9]+$/', $f) && is_dir('/var/www/html/' . $f)) {
             $adminRenamed = true;
             break;
         }
