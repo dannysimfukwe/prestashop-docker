@@ -6,32 +6,40 @@
  * Usage: Visit https://your-site.com/cleanup.php in your browser.
  */
 
-// Try to find settings.inc.php — check all likely locations
-$possiblePaths = [
-    __DIR__ . '/config/settings.inc.php',
-    dirname(__DIR__) . '/config/settings.inc.php',
-    '/var/www/html/config/settings.inc.php',
-    realpath(__DIR__ . '/../config/settings.inc.php'),
-];
+// Detect if install is complete by checking for the install folder.
+// The PrestaShop installer creates /install/ on start and deletes it on finish.
+// We also check for config.inc.php as a backup indicator.
+$installDir = '/var/www/html/install';
+$configFile = '/var/www/html/config/config.inc.php';
 
-$settingsFile = null;
-foreach ($possiblePaths as $p) {
-    if ($p && file_exists($p)) {
-        $settingsFile = $p;
-        break;
-    }
-}
+$installDone = !is_dir($installDir);
+$hasConfig = file_exists($configFile);
 
-if (!$settingsFile) {
+if (!$installDone && !$hasConfig) {
     die('Installation not complete yet. Please finish the install wizard first, then revisit this page.');
 }
 
-$configContent = file_get_contents($settingsFile);
+// Read database credentials from Docker environment variables
+$dbServer = getenv('DB_SERVER') ?: 'site_32';
+$dbUser   = getenv('DB_USER')   ?: 'admin';
+$dbPass   = getenv('DB_PASSWD') ?: '';
+$dbName   = getenv('DB_NAME')   ?: 'prestashop';
 
-// Safety: require confirmation to prevent accidental execution
+// Try to extract table prefix from config.inc.php if it exists
+$prefix = 'ps_';
+if ($hasConfig) {
+    $configContent = file_get_contents($configFile);
+    if (preg_match("/_DB_PREFIX_.*'([^']+)'/", $configContent, $m)) {
+        $prefix = $m[1];
+    }
+}
+
+// Safety: require confirmation
 $CONFIRM = isset($_GET['confirm']) && $_GET['confirm'] === 'yes';
 
 if (!$CONFIRM) {
+    $installStatus = $installDone ? '<span style="color:green;font-weight:bold">✔ Already removed</span>'
+                                   : '<span style="color:#856404;font-weight:bold">⚠ Still present</span>';
     echo '<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>PrestaShop Cleanup</title>
 <style>
@@ -39,12 +47,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;m
 h1{color:#856404}
 a{color:#004085;text-decoration:underline}
 .warning{padding:16px;background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;color:#155724;margin-top:16px}
+.info{background:#cce5ff;border:1px solid #b8daff;border-radius:6px;padding:12px;margin-top:12px;color:#004085;font-size:13px}
 </style></head><body>
 <h1>⚡ PrestaShop Post-Install Cleanup</h1>
-<p>Settings file found at: <code>' . htmlspecialchars($settingsFile) . '</code></p>
+<div class="info">
+<strong>DB Server:</strong> ' . htmlspecialchars($dbServer) . '<br>
+<strong>DB User:</strong> ' . htmlspecialchars($dbUser) . '<br>
+<strong>DB Name:</strong> ' . htmlspecialchars($dbName) . '<br>
+<strong>Install folder:</strong> ' . $installStatus . '
+</div>
 <p>This will:</p>
 <ul>
-  <li>Delete the <code>/install</code> folder</li>
+  <li>Delete the <code>/install</code> folder (if not already gone)</li>
   <li>Disable SSL enforcement in the database</li>
 </ul>
 <p>Only run this <strong>after</strong> you have completed the installation wizard.</p>
@@ -56,17 +70,8 @@ a{color:#004085;text-decoration:underline}
     exit;
 }
 
-// Read DB credentials from settings.inc.php
-preg_match("/_DB_SERVER_.*'([^']+)'/", $configContent, $m); $dbServer = $m[1] ?? 'localhost';
-preg_match("/_DB_USER_.*'([^']+)'/", $configContent, $m);   $dbUser   = $m[1] ?? 'root';
-preg_match("/_DB_PASSWD_.*'([^']+)'/", $configContent, $m); $dbPass   = $m[1] ?? '';
-preg_match("/_DB_NAME_.*'([^']+)'/", $configContent, $m);   $dbName   = $m[1] ?? 'prestashop';
-preg_match("/_DB_PREFIX_.*'([^']+)'/", $configContent, $m); $prefix   = $m[1] ?? 'ps_';
-
-$results = [];
-
 // ── 1. Remove /install folder ──
-$installDir = dirname($settingsFile) . '/install';
+$installDir = '/var/www/html/install';
 if (is_dir($installDir)) {
     $files = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($installDir, RecursiveDirectoryIterator::SKIP_DOTS),
