@@ -39,7 +39,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;m
 h1{color:#856404}
 a{color:#004085;text-decoration:underline}
 .warning{padding:16px;background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;color:#155724;margin-top:16px}
-.info{background:#cce5ff;border:1px solid #b8daff;border-radius:6px;padding:12px;margin-top:12px;color:#004085;font-size:13px}
 </style></head><body>
 <h1>⚡ PrestaShop Post-Install Cleanup</h1>
 <p>Settings file found at: <code>' . htmlspecialchars($settingsFile) . '</code></p>
