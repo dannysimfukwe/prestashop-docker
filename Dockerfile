@@ -2,6 +2,7 @@ FROM prestashop/prestashop:latest
 
 COPY entrypoint.sh /entrypoint.sh
 COPY cleanup.php /var/www/html/cleanup.php
+COPY cloudflare-ssl.conf /etc/apache2/conf-enabled/cloudflare-ssl.conf
 RUN chmod +x /entrypoint.sh \
     && chmod 644 /var/www/html/cleanup.php
 
