@@ -134,7 +134,7 @@ try {
     $pdo = new PDO($dsn, $dbUser, $dbPass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
-    $pdo->exec("UPDATE {$prefix}configuration SET value='0' WHERE name='PS_SSL_ENABLED'");
+    $pdo->exec("UPDATE {$prefix}configuration SET value='1' WHERE name='PS_SSL_ENABLED'");
     $pdo->exec("UPDATE {$prefix}configuration SET value='0' WHERE name='PS_SSL_ENABLED_EVERYWHERE'");
     $pdo->exec("UPDATE {$prefix}shop_url SET domain_ssl='$domain' WHERE main=1");
     $results[] = ['✔', 'SSL and shop_url configured for HTTPS'];
